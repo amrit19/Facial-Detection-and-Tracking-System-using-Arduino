@@ -1,103 +1,130 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%% MATLAB CODE %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Disable the warning related to old coordinate system in the vision library
 warning('off','vision:transition:usesOldCoordinates')
-%warning control statement that enables u to indicate how u want Matlab 
-%to act on certain warnings
+
+% Clear all variables in the workspace
 clear all
+
+% Clear the command window
 clc
+
+% Set the answer variable to 1
 answer=1;
+
+% Create a serial object to communicate with Arduino on COM6 port with baud rate 9600
 arduino=serial('COM6','BaudRate',9600);
 fopen(arduino);
+
+% Create a face detector object using the Viola-Jones algorithm
 faceDetector = vision.CascadeObjectDetector();
-%Detects Objects using the Viola-Jones algorithms
-%CASCADEObject means passing object on to a succession of other object
-%vision.CascadeObjectDetector() is a funtion or a package to detect faces
+
+% Create a video device object to acquire images from the webcam
 obj =imaq.VideoDevice('winvideo', 1, 'I420_320x240','ROI', [1 1 320 240]);
-%imaq.VideoDevice it allows MATLAB to use Video Device of the system
-%It also acquires images from the Image Acquisition Device 
-%YUY2 is the format of the Camera supported by MATLAB
-%ROI is Region Of Interest
-%Get the input device using image acquisition toolbox,resolution = 640x480 to improve performance
+
+% Set the color space of the acquired images to RGB
 set(obj,'ReturnedColorSpace', 'rgb');
-%form is set(obj,name,value);
-%sets the named property to the specified value for the Object obj.
-%ReturnedColorSpace is a property that specifies the Color Space we want to
-%the Toolbox to use when image data returns to Matlab WorkSpace 
+
+% Create a figure to display the webcam feed
 figure('menubar','none','tag','webcam');
+
+% Initialize the wait counter
 wait=0;
+
+% Loop until the wait counter reaches 600
 while (wait<600)
     wait=wait+1;
+    
+    % Acquire a frame from the video device
     frame=step(obj);
-    %STEP Acquires a single frame from image acquisition Device
-    %frame is the Variable assined to an image which is either RGB or
-    %GRAYSCALE
-    %Acquires a single frame from the VideoDevice System Object,obj.
+    
+    % Detect faces in the frame using the face detector
     bbox=step(faceDetector,frame);
+    
+    % Print the current value of the wait counter
     wait
+    
+    % Check if any faces are detected
     if(~isempty(bbox))
+        % Print the bounding box coordinates of the detected face
         bbox
+        
+        % Calculate the center coordinates of the face
         centx=bbox(1) + (bbox(3)/2) ;
         centy=bbox(2) - (bbox(4)/2) ;
+        
+        % Print the x and y coordinates of the center
         c1=(centx);
         c2=(centy);
         c1
         c2
+        
+        % Send the center coordinates to Arduino
         fprintf(arduino,'%s',char(centx));      
         fprintf(arduino,'%s',char(centy));
     end
-    %BBOX=Bounding Box
-    %step returns a Matrix of M-by-4 where M is some Variable to bbox
-    %M defines bounding boxes containing the detected objects
-    %Each row in Matrix has 4 element Vector [x y width height] in pixels
-    %The objects are detected from Image Named as 'frame'
-    %detected objects are from face
+    
+    % Create a shape inserter object to draw bounding boxes
     boxInserter  = vision.ShapeInserter('BorderColor','Custom',...
     'CustomBorderColor',[255 0 255]);
-    %It inserts shapes according to matrix dimensions 
-    %BorderColor is to specify the color of Shape by Default is Black
-    %Here We set it to 'Custom' so we can use 'CustomBorderColor' to specify
-    %the color of the border by vector representation
-videoOut = step(boxInserter, frame,bbox);
-%The Step function here returns an image
-%Image consists of a Bounding box for the frame
-%The BoxInsert er inserts a frame around the image
-%Output image is set to variable 'VideoOut'
+    
+    % Insert bounding boxes around the detected faces
+    videoOut = step(boxInserter, frame,bbox);
+    
+    % Display the processed frame with bounding boxes
     imshow(videoOut,'border','tight');
-    %imshow basically displays images
-    %parameters 'Border','tight' indicates the compells the images to be
-    %displayed with out a border
+    
+    % Check if the webcam figure is closed
     f=findobj('tag','webcam');
-    %
+    
+    % If the figure is closed, perform additional processing
     if (isempty(f));
+        % Convert the frame to the hue channel
         [hueChannel,~,~] = rgb2hsv(frame);
-% Display the Hue Channel data and draw the bounding box around the face.
-%%figure, imshow(hueChannel), title('Hue channel data');
-rectangle('Position',bbox(1,:),'LineWidth',2,'EdgeColor',[1 1 0])
-%Creates 2-D rectangle at Position of BBOX with width  and Edgecolor
-hold off
-%Resets to default behaviour
-%Clears existing graphs and resets axis properties to their Defaults
-noseDetector = vision.CascadeObjectDetector('Nose');
-%Detects nose properties from the video frame using Cascade package
-%the properties are assigned to a variable noseDetector
-faceImage    = imcrop(frame,bbox);
-%crops the Image 'Frame' with Bounding BOX
-%%imshow(faceImage)  
-%Displays image
-noseBBox     = step(noseDetector,faceImage);
-%Returns NoseBBOX Matrix
-noseBBox(1:1) = noseBBox(1:1) + bbox(1:1);
-videoInfo    = info(obj);
-ROI=get(obj,'ROI');
-%returns the value of Specified property from the Obj image
-VideoSize = [ROI(3) ROI(4)];
-videoPlayer  = vision.VideoPlayer('Position',[300 300 VideoSize+60]);
-%Play video or display image with specified position
-tracker = vision.HistogramBasedTracker;
-initializeObject(tracker, hueChannel, bbox);
-time=0;
-while (time<600)
-    time=time+1;
-    % Extract the next video frame
+        
+        % Display the hue channel data and draw the bounding box around the face
+        rectangle('Position',bbox(1,:),'LineWidth',2,'EdgeColor',[1 1 0])
+        
+        % Clear the current figure
+        hold off
+        
+        % Create a nose detector object
+        noseDetector = vision.CascadeObjectDetector('Nose');
+        
+        % Crop the face image using the bounding box
+        faceImage    = imcrop(frame,bbox);
+        
+        % Detect the nose in the face image
+        noseBBox     = step(noseDetector,faceImage);
+        
+        % Adjust the nose bounding box coordinates
+        noseBBox(1:1) = noseBBox(1:1) + bbox(1:1);
+        
+        % Get the video information
+        videoInfo    = info(obj);
+        
+        % Get the region of interest (ROI) from the video device
+        ROI=get(obj,'ROI');
+        
+        % Set the video size based on the ROI
+        VideoSize = [ROI(3) ROI(4)];
+        
+        % Create a video player object to display the processed video
+        videoPlayer  = vision.VideoPlayer('Position',[300 300 VideoSize+60]);
+        
+        % Create a histogram-based tracker object
+        tracker = vision.HistogramBasedTracker;
+        
+        % Initialize the tracker with the hue channel and the face bounding box
+        initializeObject(tracker, hueChannel, bbox);
+        
+        % Initialize the time counter
+        time=0;
+        
+        % Loop until the time counter reaches 600
+        while (time<600)
+            time=time+1;
+            
+            % Extract the next video frame
     frame = step(obj);
     time
 % RGB -> HSV
